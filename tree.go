@@ -38,22 +38,42 @@ type Tree[T storeValue] struct {
 	root *node[T]
 }
 
-type node[T storeValue] struct {
-	key    string
-	value  T
-	isLeaf bool
+type paramInfo struct {
+	key string
+	pos uint8
+}
 
+type nodeValue[T storeValue] struct {
+	value  T
+	params []paramInfo
+}
+
+type node[T storeValue] struct {
+	key      string
+	value    *nodeValue[T]
 	children []*node[T]
+}
+
+type matchedParams map[string]string
+
+type foundNode[T storeValue] struct {
+	value  T
+	params matchedParams
 }
 
 // IsLeaf returns whether a node is a leaf.
 func (n *node[T]) IsLeaf() bool {
-	return n.isLeaf
+	return n.value != nil
 }
 
 // GetValue returns the stored value of a pointer to a node.
-func (n *node[T]) GetValue() T {
-	return n.value
+func (fn *foundNode[T]) GetValue() T {
+	return fn.value
+}
+
+// GetValue returns the stored value of a pointer to a node.
+func (fn *foundNode[T]) GetParams() matchedParams {
+	return fn.params
 }
 
 func New[T storeValue](opts ...OptionFunc[T]) *Tree[T] {
@@ -86,13 +106,18 @@ func (t *Tree[T]) Insert(key string, value T) error {
 		return err
 	}
 
+	var (
+		paramInfos = getPathParams(key)
+		nv         = createNewNodeValue[T](value, paramInfos)
+	)
+
 	// If the root is still nil, then the new node is the root.
 	if t.root == nil {
-		t.root = createNewNode(key, value)
+		t.root = createNewNode(key, nv)
 		return nil
 	}
 
-	return insertRec(t.root, key, value)
+	return insertRec(t.root, key, nv)
 }
 
 // iterateInsert iterates on the given node's children, and calls
@@ -101,7 +126,7 @@ func (t *Tree[T]) Insert(key string, value T) error {
 // differs from errNoCommonPrefix, we return it. If none of those happaned, we
 // simply return errNoCommonPrefix which indicates we were trying to
 // insert on a wrong branch.
-func iterateInsert[T storeValue](n *node[T], key string, value T) error {
+func iterateInsert[T storeValue](n *node[T], key string, value *nodeValue[T]) error {
 	for _, ch := range n.children {
 		insertErr := insertRec(ch, key, value)
 
@@ -117,7 +142,7 @@ func iterateInsert[T storeValue](n *node[T], key string, value T) error {
 	return errNoCommonPrefix
 }
 
-func insertRec[T storeValue](n *node[T], key string, value T) error {
+func insertRec[T storeValue](n *node[T], key string, value *nodeValue[T]) error {
 	lcp := longestCommonPrefix(n.key, key)
 
 	// There is no chance of inserting in this branch.
@@ -146,7 +171,7 @@ func insertRec[T storeValue](n *node[T], key string, value T) error {
 	// Three other possibilities:
 	// 		1) the current node's key is longer than the LCP => must split keys,
 	// 		2) current node's are same as lcp, and new key is longer =>,
-	// 		3) otherwise the new node should be amongs the children of the current node.
+	// 		3) otherwise the new node should be amongts the children of the current node.
 	if currentKeyLen > lcp {
 		cNewNode := createNewNode(n.key[lcp:], n.value, n.children...)
 
@@ -157,17 +182,13 @@ func insertRec[T storeValue](n *node[T], key string, value T) error {
 			n.key = n.key[:lcp]
 			n.value = value
 			n.children = []*node[T]{cNewNode}
-			n.isLeaf = true
 
 			return nil
 		}
 
 		newNode := createNewNode(keyRem, value)
 
-		var defValue T
-
-		n.value = defValue
-		n.isLeaf = false
+		n.value = nil
 		n.key = n.key[:lcp]
 		n.children = []*node[T]{cNewNode, newNode}
 
@@ -224,18 +245,15 @@ func checkPathParams(url string) error {
 	)
 
 	for counter < len(url) {
-		if url[counter] == slash {
-			// If we are inside a path param, there cant be a slash.
-			if insideParam {
-				return errBadPathParamSyntax
-			}
+		// If we are inside a path param, there cant be a slash.
+		if url[counter] == slash && insideParam {
+			return errBadPathParamSyntax
 		}
 
 		if url[counter] == curlyStart {
 			if insideParam {
 				return errBadPathParamSyntax
 			}
-
 			insideParam = true
 		}
 
@@ -296,12 +314,11 @@ func longestCommonPrefix(str1, str2 string) int {
 }
 
 // createNewNode is a factory for creating new nodes.
-func createNewNode[T storeValue](key string, value T, children ...*node[T]) *node[T] {
+func createNewNode[T storeValue](key string, value *nodeValue[T], children ...*node[T]) *node[T] {
 	n := &node[T]{
 		key:      key,
 		value:    value,
 		children: make([]*node[T], 0),
-		isLeaf:   true,
 	}
 
 	if len(children) > 0 {
@@ -311,9 +328,16 @@ func createNewNode[T storeValue](key string, value T, children ...*node[T]) *nod
 	return n
 }
 
+func createNewNodeValue[T storeValue](val T, paramsInfo []paramInfo) *nodeValue[T] {
+	return &nodeValue[T]{
+		value:  val,
+		params: paramsInfo,
+	}
+}
+
 // find starts the search for given key and returns a pointer to
 // the found node. If there is no match, it returns nil.
-func (t *Tree[T]) Find(key string) *node[T] {
+func (t *Tree[T]) Find(key string) *foundNode[T] {
 	if err := checkTree(t); err != nil {
 		return nil
 	}
@@ -322,7 +346,16 @@ func (t *Tree[T]) Find(key string) *node[T] {
 		return nil
 	}
 
-	return findRec(t.root, key, false)
+	n := findRec(t.root, key, false)
+
+	if n == nil || n.value == nil {
+		return nil
+	}
+
+	return &foundNode[T]{
+		value:  n.value.value,
+		params: matchParams(n.value.params, key),
+	}
 }
 
 // findRec is the main logic for conducting the search in a recursive manner.
@@ -472,7 +505,7 @@ func getOffsets(storedKey, searchKey string, isWildcard bool) (int, int, bool) {
 // FindLongestMatch is similar to find but it doesnt include storeValue wildcard params at all.
 // And it is not looking for perfect match, rather it finds the longest „route” based on the given string.
 // Used for storing services based on their prefixes.
-func (t *Tree[T]) FindLongestMatch(key string) *node[T] {
+func (t *Tree[T]) FindLongestMatch(key string) *foundNode[T] {
 	if err := checkTree(t); err != nil {
 		return nil
 	}
@@ -481,7 +514,16 @@ func (t *Tree[T]) FindLongestMatch(key string) *node[T] {
 		return nil
 	}
 
-	return findLongestMatchRec(t.root, key)
+	n := findLongestMatchRec(t.root, key)
+
+	if n == nil || n.value == nil {
+		return nil
+	}
+
+	return &foundNode[T]{
+		value:  n.value.value,
+		params: make(matchedParams),
+	}
 }
 
 func findLongestMatchRec[T storeValue](n *node[T], key string) *node[T] {
@@ -565,4 +607,56 @@ func getByPredicateRec[T storeValue](n *node[T], fn predicateFunction[T]) *node[
 	}
 
 	return nil
+}
+
+func getPathParams(v string) []paramInfo {
+	var (
+		paramCount = strings.Count(v, string(curlyStart))
+
+		params   = make([]paramInfo, paramCount)
+		splitted = strings.Split(v, string(slash))
+	)
+
+	var counter = 0
+
+	for i, el := range splitted {
+		if !strings.ContainsRune(el, curlyStart) {
+			continue
+		}
+
+		l := len(el)
+
+		if l < 2 {
+			continue
+		}
+
+		params[counter] = paramInfo{
+			key: el[1 : l-1],
+			pos: uint8(i),
+		}
+		counter++
+	}
+
+	return params
+}
+
+func matchParams(params []paramInfo, v string) matchedParams {
+	var (
+		mp  = make(matchedParams)
+		spl = strings.Split(v, string(slash))
+
+		l = len(spl)
+	)
+
+	for _, pi := range params {
+		var pos int = int(pi.pos)
+
+		if pos >= l {
+			continue
+		}
+
+		mp[pi.key] = spl[pos]
+	}
+
+	return mp
 }

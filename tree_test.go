@@ -2,6 +2,7 @@ package rtree
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -839,6 +840,93 @@ func TestNewGetOffSets(t *testing.T) {
 
 			if gotIsWildcard != tc.expectedIsWildcard {
 				t.Errorf("expected isWildcard: %v; got: %v\n", tc.expectedIsWildcard, gotIsWildcard)
+			}
+		})
+	}
+}
+
+func TestGetPathParams(t *testing.T) {
+	type testCase struct {
+		name     string
+		input    string
+		expected []paramInfo
+	}
+
+	tt := []testCase{
+		{
+			name:     "no params in input, empty slice",
+			input:    "/foo/bar/baz",
+			expected: []paramInfo{},
+		},
+		{
+			name:  "params in input, proper slice",
+			input: "/foo/{bar}/baz/{id}",
+			expected: []paramInfo{
+				{
+					key: "bar",
+					pos: 2,
+				},
+				{
+					key: "id",
+					pos: 4,
+				},
+			},
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			got := getPathParams(tc.input)
+
+			if !reflect.DeepEqual(tc.expected, got) {
+				t.Error("bad; todo fix: more informative error")
+			}
+		})
+	}
+}
+
+func TestMatchParams(t *testing.T) {
+	type testCase struct {
+		name   string
+		params []paramInfo
+		input  string
+
+		expected matchedParams
+	}
+
+	tt := []testCase{
+		{
+			name:     "empty map, if no params",
+			params:   []paramInfo{},
+			input:    "/foo/bar/baz",
+			expected: map[string]string{},
+		},
+		{
+			name: "returns the good params",
+			params: []paramInfo{
+				{
+					key: "first-one",
+					pos: 2,
+				},
+				{
+					key: "second-one",
+					pos: 3,
+				},
+			},
+			input: "/foo/bar/baz",
+			expected: map[string]string{
+				"first-one":  "bar",
+				"second-one": "baz",
+			},
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			got := matchParams(tc.params, tc.input)
+
+			if !reflect.DeepEqual(tc.expected, got) {
+				t.Error("bad; todo fix: more informative error")
 			}
 		})
 	}
