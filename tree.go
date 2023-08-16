@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	version = "v1.0"
+	version = "v1.0.1"
 
 	slash = '/'
 
@@ -21,7 +21,7 @@ type storeValue interface {
 }
 
 type (
-	predicateFunction[T storeValue] func(*node[T]) bool
+	predicateFunction[T storeValue] func(*Node[T]) bool
 	OptionFunc[T storeValue]        func(*Tree[T])
 )
 
@@ -38,7 +38,7 @@ var (
 
 type Tree[T storeValue] struct {
 	mu   sync.RWMutex
-	root *node[T]
+	root *Node[T]
 }
 
 type paramInfo struct {
@@ -46,36 +46,47 @@ type paramInfo struct {
 	pos uint8
 }
 
-type nodeValue[T storeValue] struct {
+type NodeValue[T storeValue] struct {
 	value  T
 	params []paramInfo
 }
 
-type node[T storeValue] struct {
+type Node[T storeValue] struct {
 	key      string
-	value    *nodeValue[T]
-	children []*node[T]
+	value    *NodeValue[T]
+	children []*Node[T]
 }
 
 type matchedParams map[string]string
 
-type foundNode[T storeValue] struct {
+type FoundNode[T storeValue] struct {
 	value  T
 	params matchedParams
 }
 
 // IsLeaf returns whether a node is a leaf.
-func (n *node[T]) IsLeaf() bool {
+func (n *Node[T]) IsLeaf() bool {
 	return n.value != nil
 }
 
+func (n *Node[T]) GetValue() *NodeValue[T] {
+	if !n.IsLeaf() {
+		return nil
+	}
+	return n.value
+}
+
+func (nv *NodeValue[T]) GetValue() T {
+	return nv.value
+}
+
 // GetValue returns the stored value of a pointer to a node.
-func (fn *foundNode[T]) GetValue() T {
+func (fn *FoundNode[T]) GetValue() T {
 	return fn.value
 }
 
 // GetValue returns the stored value of a pointer to a node.
-func (fn *foundNode[T]) GetParams() matchedParams {
+func (fn *FoundNode[T]) GetParams() matchedParams {
 	return fn.params
 }
 
@@ -129,7 +140,7 @@ func (t *Tree[T]) Insert(key string, value T) error {
 // differs from errNoCommonPrefix, we return it. If none of those happaned, we
 // simply return errNoCommonPrefix which indicates we were trying to
 // insert on a wrong branch.
-func iterateInsert[T storeValue](n *node[T], key string, value *nodeValue[T]) error {
+func iterateInsert[T storeValue](n *Node[T], key string, value *NodeValue[T]) error {
 	for _, ch := range n.children {
 		insertErr := insertRec(ch, key, value)
 
@@ -145,7 +156,7 @@ func iterateInsert[T storeValue](n *node[T], key string, value *nodeValue[T]) er
 	return errNoCommonPrefix
 }
 
-func insertRec[T storeValue](n *node[T], key string, value *nodeValue[T]) error {
+func insertRec[T storeValue](n *Node[T], key string, value *NodeValue[T]) error {
 	lcp := longestCommonPrefix(n.key, key)
 
 	// There is no chance of inserting in this branch.
@@ -184,7 +195,7 @@ func insertRec[T storeValue](n *node[T], key string, value *nodeValue[T]) error 
 		if keyRem == "" {
 			n.key = n.key[:lcp]
 			n.value = value
-			n.children = []*node[T]{cNewNode}
+			n.children = []*Node[T]{cNewNode}
 
 			return nil
 		}
@@ -193,7 +204,7 @@ func insertRec[T storeValue](n *node[T], key string, value *nodeValue[T]) error 
 
 		n.value = nil
 		n.key = n.key[:lcp]
-		n.children = []*node[T]{cNewNode, newNode}
+		n.children = []*Node[T]{cNewNode, newNode}
 
 		return nil
 	}
@@ -215,7 +226,7 @@ func insertRec[T storeValue](n *node[T], key string, value *nodeValue[T]) error 
 	return nil
 }
 
-func addToChildren[T storeValue](n, newNode *node[T]) {
+func addToChildren[T storeValue](n, newNode *Node[T]) {
 	n.children = append(n.children, newNode)
 }
 
@@ -317,11 +328,11 @@ func longestCommonPrefix(str1, str2 string) int {
 }
 
 // createNewNode is a factory for creating new nodes.
-func createNewNode[T storeValue](key string, value *nodeValue[T], children ...*node[T]) *node[T] {
-	n := &node[T]{
+func createNewNode[T storeValue](key string, value *NodeValue[T], children ...*Node[T]) *Node[T] {
+	n := &Node[T]{
 		key:      key,
 		value:    value,
-		children: make([]*node[T], 0),
+		children: make([]*Node[T], 0),
 	}
 
 	if len(children) > 0 {
@@ -331,8 +342,8 @@ func createNewNode[T storeValue](key string, value *nodeValue[T], children ...*n
 	return n
 }
 
-func createNewNodeValue[T storeValue](val T, paramsInfo []paramInfo) *nodeValue[T] {
-	return &nodeValue[T]{
+func createNewNodeValue[T storeValue](val T, paramsInfo []paramInfo) *NodeValue[T] {
+	return &NodeValue[T]{
 		value:  val,
 		params: paramsInfo,
 	}
@@ -340,7 +351,7 @@ func createNewNodeValue[T storeValue](val T, paramsInfo []paramInfo) *nodeValue[
 
 // find starts the search for given key and returns a pointer to
 // the found node. If there is no match, it returns nil.
-func (t *Tree[T]) Find(key string) *foundNode[T] {
+func (t *Tree[T]) Find(key string) *FoundNode[T] {
 	if err := checkTree(t); err != nil {
 		return nil
 	}
@@ -355,7 +366,7 @@ func (t *Tree[T]) Find(key string) *foundNode[T] {
 		return nil
 	}
 
-	return &foundNode[T]{
+	return &FoundNode[T]{
 		value:  n.value.value,
 		params: matchParams(n.value.params, key),
 	}
@@ -364,7 +375,7 @@ func (t *Tree[T]) Find(key string) *foundNode[T] {
 // findRec is the main logic for conducting the search in a recursive manner.
 // It looks for match on the given node's level, and calls itself recursively
 // amongs its children, until the search is over.
-func findRec[T storeValue](n *node[T], key string, isWildcard bool) *node[T] {
+func findRec[T storeValue](n *Node[T], key string, isWildcard bool) *Node[T] {
 	if n == nil {
 		return nil
 	}
@@ -508,7 +519,7 @@ func getOffsets(storedKey, searchKey string, isWildcard bool) (int, int, bool) {
 // FindLongestMatch is similar to find but it doesnt include storeValue wildcard params at all.
 // And it is not looking for perfect match, rather it finds the longest „route” based on the given string.
 // Used for storing services based on their prefixes.
-func (t *Tree[T]) FindLongestMatch(key string) *foundNode[T] {
+func (t *Tree[T]) FindLongestMatch(key string) *FoundNode[T] {
 	if err := checkTree(t); err != nil {
 		return nil
 	}
@@ -523,13 +534,13 @@ func (t *Tree[T]) FindLongestMatch(key string) *foundNode[T] {
 		return nil
 	}
 
-	return &foundNode[T]{
+	return &FoundNode[T]{
 		value:  n.value.value,
 		params: make(matchedParams),
 	}
 }
 
-func findLongestMatchRec[T storeValue](n *node[T], key string) *node[T] {
+func findLongestMatchRec[T storeValue](n *Node[T], key string) *Node[T] {
 	if n == nil {
 		return nil
 	}
@@ -558,7 +569,7 @@ func findLongestMatchRec[T storeValue](n *node[T], key string) *node[T] {
 }
 
 // GetAllLeaf returns all the stored leafs.
-func (t *Tree[T]) GetAllLeaf() []*node[T] {
+func (t *Tree[T]) GetAllLeaf() []*Node[T] {
 	if err := checkTree(t); err != nil {
 		return nil
 	}
@@ -566,8 +577,8 @@ func (t *Tree[T]) GetAllLeaf() []*node[T] {
 	return getAllLeafRec(t.root)
 }
 
-func getAllLeafRec[T storeValue](n *node[T]) []*node[T] {
-	arr := make([]*node[T], 0)
+func getAllLeafRec[T storeValue](n *Node[T]) []*Node[T] {
+	arr := make([]*Node[T], 0)
 
 	for _, c := range n.children {
 		chArr := getAllLeafRec(c)
@@ -586,7 +597,7 @@ func getAllLeafRec[T storeValue](n *node[T]) []*node[T] {
 
 // GetByPredicate does a search in the tree based on given function.
 // It uses DFS as the algorithm to traverse the tree.
-func (t *Tree[T]) GetByPredicate(fn predicateFunction[T]) *node[T] {
+func (t *Tree[T]) GetByPredicate(fn predicateFunction[T]) *Node[T] {
 	if err := checkTree(t); err != nil {
 		return nil
 	}
@@ -594,7 +605,7 @@ func (t *Tree[T]) GetByPredicate(fn predicateFunction[T]) *node[T] {
 	return getByPredicateRec(t.root, fn)
 }
 
-func getByPredicateRec[T storeValue](n *node[T], fn predicateFunction[T]) *node[T] {
+func getByPredicateRec[T storeValue](n *Node[T], fn predicateFunction[T]) *Node[T] {
 	if n == nil {
 		return nil
 	}
