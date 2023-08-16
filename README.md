@@ -26,6 +26,12 @@ if err := tree.Insert("/foo/bar/baz", &Route{}); err != nil {
 
 ### Find
 
+The `Find` searches for the given key in the tree and returns the corresponding node – if there was a match. By default, the search is conducted by involving wildcard path params as well.
+
+To check whether the search was successfull – thus found the node – this only thing is to do, to check if the node is `nil` or not. 
+
+The example below demonstrates the abilities:
+
 ```go
 tree := rtree.New[*Route]()
 
@@ -39,5 +45,13 @@ if node == nil {
   fmt.Println("no match")
   return
 }
-// Other work with found node.
+
+// It returns the stored value with the original type – in this scenario the type of `value` would be *Route.
+value := node.GetValue()
+
+// GetParams returns ALL the params in a map[string]string format.
+params := node.GetParams()
+
+// eg. it would be "5" NOT 5.
+id := params["id"]
 ```

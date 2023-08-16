@@ -2,11 +2,14 @@ package rtree
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 )
 
 const (
+	version = "v1.0"
+
 	slash = '/'
 
 	curlyStart = '{'
@@ -23,14 +26,14 @@ type (
 )
 
 var (
-	errBadPathParamSyntax = errors.New("[tree]: bad path param syntax")
-	errKeyIsAlreadyStored = errors.New("[tree]: key is already stored")
-	errKeyIsEmpty         = errors.New("[tree]: key is empty")
-	errMissingSlashPrefix = errors.New("[tree]: urls must be started with a '/'")
-	errNoCommonPrefix     = errors.New("[tree]: no commmon prefix in given strings")
-	errPresentSlashSuffix = errors.New("[tree]: urls must not be ended with a '/'")
-	errRootIsNil          = errors.New("[tree]: the root of the tree is <nil>")
-	errTreeIsNil          = errors.New("[tree]: the tree is <nil>")
+	errBadPathParamSyntax = fmt.Errorf("[rtree %s]: bad path param syntax", version)
+	errKeyIsAlreadyStored = fmt.Errorf("[rtree %s]: key is already stored", version)
+	errKeyIsEmpty         = fmt.Errorf("[rtree %s]: key is empty", version)
+	errMissingSlashPrefix = fmt.Errorf("[rtree %s]: urls must be started with a '/'", version)
+	errNoCommonPrefix     = fmt.Errorf("[rtree %s]: no commmon prefix in given strings", version)
+	errPresentSlashSuffix = fmt.Errorf("[rtree %s]: urls must not be ended with a '/'", version)
+	errRootIsNil          = fmt.Errorf("[rtree %s]: the root of the tree is <nil>", version)
+	errTreeIsNil          = fmt.Errorf("[rtree %s]: the tree is <nil>", version)
 )
 
 type Tree[T storeValue] struct {
