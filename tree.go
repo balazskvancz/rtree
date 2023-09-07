@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	version = "v1.0.1"
+	version = "v1.0.2"
 
 	slash = '/'
 
@@ -239,7 +239,7 @@ func checkUrl(url string) error {
 	}
 
 	// Trailing slash.
-	if url[len(url)-1] == slash {
+	if url[len(url)-1] == slash && url != "/" {
 		return errPresentSlashSuffix
 	}
 

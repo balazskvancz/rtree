@@ -931,3 +931,44 @@ func TestMatchParams(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckUrl(t *testing.T) {
+	type testCase struct {
+		name  string
+		input string
+		err   error
+	}
+
+	tt := []testCase{
+		{
+			name:  "the fn returns error, if no slash prefix",
+			input: "foo",
+			err:   errMissingSlashPrefix,
+		},
+		{
+			name:  "the fn returns error, if there is slash suffix",
+			input: "/foo/",
+			err:   errPresentSlashSuffix,
+		},
+		{
+			name:  "the fn returns no error, simple slash",
+			input: "/",
+			err:   nil,
+		},
+		{
+			name:  "the fn returns no error, normal url",
+			input: "/foo/bar/baz",
+			err:   nil,
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkUrl(tc.input)
+
+			if !errors.Is(err, tc.err) {
+				t.Errorf("expected error: %v; got error: %v\n", tc.err, err)
+			}
+		})
+	}
+}
